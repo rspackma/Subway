@@ -1,0 +1,38 @@
+[
+	{
+		"StartStation": "A",
+		"StartTime": "09:00:00",
+		"EndStation": "B",
+		"EndTime": "09:02:00"
+	},
+	{
+		"StartStation": "B",
+		"StartTime": "09:09:00",
+		"EndStation": "A",
+		"EndTime": "09:11:00"
+	},
+	{
+		"StartStation": "B",
+		"StartTime": "09:15:00",
+		"EndStation": "C",
+		"EndTime": "09:17:00"
+	},
+	{
+		"StartStation": "C",
+		"StartTime": "09:06:00",
+		"EndStation": "B",
+		"EndTime": "09:08:00"
+	},
+	{
+		"StartStation": "C",
+		"StartTime": "09:19:00",
+		"EndStation": "D",
+		"EndTime": "09:21:00"
+	},
+	{
+		"StartStation": "D",
+		"StartTime": "09:00:00",
+		"EndStation": "C",
+		"EndTime": "09:02:00"
+	}
+]

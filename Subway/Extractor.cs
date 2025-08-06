@@ -29,19 +29,51 @@ class Extractor
         Calendar = ReadCSV(@"..\..\..\..\Schedules\GTFS\calendar.txt");
     }
 
+    private HashSet<string> GetNoTransferStops()
+    {
+        var stopMap = Stops.ToDictionary(x => x["stop_id"], x => x["parent_station"] == "" ? x["stop_id"] : x["parent_station"]);
+        var tripRouteMap = Trips.ToDictionary(x => x["trip_id"], x => x["route_id"]);
+        var stopRoutes = StopTimes
+            .Select(x => new { stop_id = stopMap[x["stop_id"]], route_id = tripRouteMap[x["trip_id"]] })
+            .GroupBy(x => x.stop_id)
+            .ToDictionary(g => g.Key, g => g.Select(x => x.route_id).Distinct().ToList());
+        return StopTimes.Select(x => x["stop_id"]).Distinct().Where(x => stopRoutes[stopMap[x]].Count <= 1).ToHashSet();
+    }
+
     public void Process(string outputFile)
     {
+        var noTransferStops = GetNoTransferStops();
+
         var transitions = new List<Transition>();
 
         var trips = StopTimes.GroupBy(x => x["trip_id"]).Select(g => g.OrderBy(x => int.Parse(x["stop_sequence"])).ToList());
         foreach (var trip in trips)
         {
             var tripTransitions = GetTripTransitions(trip);
+            RemoveNoTransferTransitions(tripTransitions, noTransferStops);
             RemoveInvalidTimeTransitions(tripTransitions);
+            AddStopNames(tripTransitions);
             transitions.AddRange(tripTransitions);
         }
 
         File.WriteAllText(outputFile, JsonSerializer.Serialize(transitions, new JsonSerializerOptions { WriteIndented = true }));
+    }
+
+    private void RemoveNoTransferTransitions(List<Transition> transitions, HashSet<string> noTransferStops)
+    {
+        var index = 0;
+        while (index + 1 < transitions.Count)
+        {
+            var transition = transitions[index];
+            if (noTransferStops.Contains(transition.EndStation))
+            {
+                transition.EndStation = transitions[index + 1].EndStation;
+                transition.EndTime = transitions[index + 1].EndTime;
+                transitions.RemoveAt(index + 1);
+            }
+            else
+                ++index;
+        }
     }
 
     private void RemoveInvalidTimeTransitions(List<Transition> transitions)
@@ -54,6 +86,15 @@ class Extractor
                 ++index;
             else
                 transitions.RemoveAt(index);
+        }
+    }
+
+    private void AddStopNames(List<Transition> transitions)
+    {
+        foreach (var transition in transitions)
+        {
+            transition.StartStation = Stops.Where(x => x["stop_id"] == transition.StartStation).Single()["stop_name"];
+            transition.EndStation = Stops.Where(x => x["stop_id"] == transition.EndStation).Single()["stop_name"];
         }
     }
 
@@ -84,8 +125,6 @@ class Extractor
 
     private void ProcessStop(Dictionary<string, string> stop, List<Transition> transitions, string routeName, List<int> days, ref string prevStation, ref string prevTime)
     {
-        var stop_name = Stops.Where(x => x["stop_id"] == stop["stop_id"]).Single()["stop_name"];
-
         if (prevStation != "")
         {
             foreach (var day in days)
@@ -94,7 +133,7 @@ class Extractor
                 {
                     StartStation = prevStation,
                     StartTime = ParseDateTime(day, prevTime),
-                    EndStation = stop_name,
+                    EndStation = stop["stop_id"],
                     EndTime = ParseDateTime(day, stop["arrival_time"]),
                     Route = routeName,
                 };
@@ -102,7 +141,7 @@ class Extractor
             }
         }
 
-        prevStation = stop_name;
+        prevStation = stop["stop_id"];
         prevTime = stop["departure_time"];
     }
 }

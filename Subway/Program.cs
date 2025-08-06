@@ -21,7 +21,7 @@ class Program
 
         if (TotalVisits == Transitions.Count)
         {
-            result.Duration = transition.EndTime;
+            result.StartTime = transition.EndTime;
             Results.Add(result.Copy());
             return;
         }

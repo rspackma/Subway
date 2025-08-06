@@ -2,7 +2,7 @@
 
 class Result
 {
-    public required TimeSpan Duration { get; set; }
+    public required DateTime StartTime { get; set; }
     public required string StartStation { get; set; }
     public List<Transition> Transitions { get; set; } = new();
 
@@ -10,7 +10,7 @@ class Result
     {
         return new Result
         {
-            Duration = Duration,
+            StartTime = StartTime,
             StartStation = StartStation,
             Transitions = Transitions.ToList(),
         };

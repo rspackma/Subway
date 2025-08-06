@@ -4,7 +4,9 @@ namespace Subway;
 
 class Extractor
 {
-    public static List<string> DayNames { get; } = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+    public static DateTime StartTime { get; } = DateTime.Parse("2025-08-11 04:00 AM");
+    public static DateTime EndTime { get; } = DateTime.Parse("2025-08-12 04:00 AM");
+    public static DateTime SundayTime { get; } = StartTime - StartTime.TimeOfDay - TimeSpan.FromDays((int)StartTime.DayOfWeek);
 
     public List<Dictionary<string, string>> StopTimes { get; }
     public List<Dictionary<string, string>> Stops { get; }
@@ -35,10 +37,24 @@ class Extractor
         foreach (var trip in trips)
         {
             var tripTransitions = GetTripTransitions(trip);
+            RemoveInvalidTimeTransitions(tripTransitions);
             transitions.AddRange(tripTransitions);
         }
 
         File.WriteAllText(outputFile, JsonSerializer.Serialize(transitions, new JsonSerializerOptions { WriteIndented = true }));
+    }
+
+    private void RemoveInvalidTimeTransitions(List<Transition> transitions)
+    {
+        var index = 0;
+        while (index < transitions.Count)
+        {
+            var transition = transitions[index];
+            if ((transition.StartTime >= StartTime) && (transition.EndTime <= EndTime))
+                ++index;
+            else
+                transitions.RemoveAt(index);
+        }
     }
 
     private List<Transition> GetTripTransitions(List<Dictionary<string, string>> stops)
@@ -50,7 +66,7 @@ class Extractor
         var routeName = $"{route["route_short_name"]} - {route["route_long_name"]}";
 
         var calendar = Calendar.Where(x => x["service_id"] == trip["service_id"]).Single();
-        var days = DayNames.Select((dayName, dayOfWeek) => new { dayName, dayOfWeek }).Where(o => calendar[o.dayName] == "1").Select(o => o.dayOfWeek).ToList();
+        var days = Enum.GetValues<DayOfWeek>().Select(x => new { dayName = x.ToString().ToLowerInvariant(), dayOfWeek = (int)x }).Where(o => calendar[o.dayName] == "1").Select(o => o.dayOfWeek).ToList();
 
         var prevStation = "";
         var prevTime = "";
@@ -60,10 +76,10 @@ class Extractor
         return transitions;
     }
 
-    static TimeSpan ParseTimeSpan(int day, string value)
+    static DateTime ParseDateTime(int day, string value)
     {
         var fields = value.Split(":");
-        return TimeSpan.FromDays(day) + TimeSpan.FromHours(int.Parse(fields[0])) + TimeSpan.FromMinutes(int.Parse(fields[1]));
+        return SundayTime + TimeSpan.FromDays(day) + TimeSpan.FromHours(int.Parse(fields[0])) + TimeSpan.FromMinutes(int.Parse(fields[1]));
     }
 
     private void ProcessStop(Dictionary<string, string> stop, List<Transition> transitions, string routeName, List<int> days, ref string prevStation, ref string prevTime)
@@ -77,9 +93,9 @@ class Extractor
                 var transition = new Transition
                 {
                     StartStation = prevStation,
-                    StartTime = ParseTimeSpan(day, prevTime),
+                    StartTime = ParseDateTime(day, prevTime),
                     EndStation = stop_name,
-                    EndTime = ParseTimeSpan(day, stop["arrival_time"]),
+                    EndTime = ParseDateTime(day, stop["arrival_time"]),
                     Route = routeName,
                 };
                 transitions.Add(transition);

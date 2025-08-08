@@ -1,4 +1,5 @@
-﻿using System.Text.Json;
+﻿using System.Runtime.CompilerServices;
+using System.Text.Json;
 
 namespace Subway;
 
@@ -50,7 +51,7 @@ class Extractor
         foreach (var trip in trips)
         {
             var tripTransitions = GetTripTransitions(trip);
-            RemoveNoTransferTransitions(tripTransitions, noTransferStops);
+            //RemoveNoTransferTransitions(tripTransitions, noTransferStops);
             RemoveInvalidTimeTransitions(tripTransitions);
             AddStopNames(tripTransitions);
             transitions.AddRange(tripTransitions);
@@ -83,6 +84,19 @@ class Extractor
         {
             var transition = transitions[index];
             if ((transition.StartTime >= StartTime) && (transition.EndTime <= EndTime))
+                ++index;
+            else
+                transitions.RemoveAt(index);
+        }
+    }
+
+    private void RemoveStatenIslandTransitions(List<Transition> transitions)
+    {
+        var index = 0;
+        while (index < transitions.Count)
+        {
+            var transition = transitions[index];
+            if (transition.Route != "SIR - Staten Island Railway")
                 ++index;
             else
                 transitions.RemoveAt(index);

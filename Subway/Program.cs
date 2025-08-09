@@ -14,11 +14,13 @@ class Program
     {
         if (!Visits.ContainsKey(transition.EndStation))
             Visits[transition.EndStation] = 0;
-        if (Visits[transition.EndStation] == 0)
+        if (Visits[transition.EndStation] == 0) ;
             ++TotalVisits;
         ++Visits[transition.EndStation];
 
         result.Transitions.Add(transition);
+
+        Console.WriteLine($"{transition.Route} to {transition.EndStation}, arriving {transition.EndTime}");
 
         if (TotalVisits == Transitions.Count)
         {
@@ -49,12 +51,12 @@ class Program
 
         var data = File.ReadAllBytes(@"C:\dev\Subway\Subway\Routes.jsn");
         var transitions = JsonSerializer.Deserialize<List<Transition>>(data);
-        var program = new Program { Transitions = transitions.GroupBy(x => x.StartStation).ToDictionary(g => g.Key, g => g.ToList().OrderBy(Transition.StartTime)) };
+        var program = new Program { Transitions = transitions.GroupBy(x => x.StartStation).ToDictionary(g => g.Key, g => g.ToList()) };
 
-        var result = new Result { StartStation = "A" };
-        program.TryRoute(new Transition { StartStation = "Begin", StartTime = new TimeSpan(9, 0, 0), EndStation = "A", EndTime = new TimeSpan(9, 0, 0) }, result);
+        var result = new Result { StartStation = "H15" , StartTime = DateTime.Parse("2025-08-11 04:01 AM") };
+        program.TryRoute(new Transition { StartStation = "H15", StartTime = DateTime.Parse("2025-08-11 04:01 AM"), EndStation = "H14", EndTime = DateTime.Parse("2025-08-11 04:03 AM"), Route = "S - Rockaway Park Shuttle"}, result);
         Console.WriteLine($"{program.Results.Count} results");
-        Console.WriteLine(string.Join("\n", program.Results.Select(result => $"{result.Duration}: {string.Join(" => ", result.Transitions.Select(t => $"{t.EndStation}: {t.EndTime}"))}")));
+        //Console.WriteLine(string.Join("\n", program.Results.Select(result => $"{result.Duration}: {string.Join(" => ", result.Transitions.Select(t => $"{t.EndStation}: {t.EndTime}"))}")));
         Console.WriteLine("Done");
         Console.ReadKey();
     }

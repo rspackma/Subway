@@ -17,6 +17,16 @@ class Extractor
     public List<Dictionary<string, string>> Calendar { get; }
     public List<Dictionary<string, string>> Transfers { get; }
 
+    public Dictionary<string, string> redundantStations = new Dictionary<string, string>
+    {
+        {"140", "142"},
+        {"D13", "A12"},
+        {"D20", "A32"},
+        {"H19", "H04"},
+        {"N12", "D43"},
+        {"R09", "718"}
+    };
+
     List<Dictionary<string, string>> ReadCSV(string fileName)
     {
         var data = File.ReadAllLines(fileName).Select(line => line.Split(",")).ToList();
@@ -63,6 +73,18 @@ class Extractor
             //AddStopNames(transferTransitions);
             transitions.AddRange(tripTransitions);
             transitions.AddRange(transferTransitions);
+        }
+
+        foreach(var transition in transitions)
+        {
+            if(redundantStations.Keys.Contains(transition.StartStation))
+            {
+                transition.StartStation = redundantStations[transition.StartStation];
+            }
+            if (redundantStations.Keys.Contains(transition.EndStation))
+            {
+                transition.EndStation = redundantStations[transition.EndStation];
+            }
         }
 
         File.WriteAllText(outputFile, JsonSerializer.Serialize(transitions, new JsonSerializerOptions { WriteIndented = true }));

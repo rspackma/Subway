@@ -1,4 +1,5 @@
-﻿using System.Runtime.CompilerServices;
+﻿using System.Net.Http.Headers;
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 
 namespace Subway;
@@ -14,6 +15,7 @@ class Extractor
     public List<Dictionary<string, string>> Trips { get; }
     public List<Dictionary<string, string>> Routes { get; }
     public List<Dictionary<string, string>> Calendar { get; }
+    public List<Dictionary<string, string>> Transfers { get; }
 
     List<Dictionary<string, string>> ReadCSV(string fileName)
     {
@@ -28,11 +30,11 @@ class Extractor
         Trips = ReadCSV(@"..\..\..\..\Schedules\GTFS\trips.txt");
         Routes = ReadCSV(@"..\..\..\..\Schedules\GTFS\routes.txt");
         Calendar = ReadCSV(@"..\..\..\..\Schedules\GTFS\calendar.txt");
+        Transfers = ReadCSV(@"..\..\..\..\Schedules\GTFS\transfers.txt");
     }
 
-    private HashSet<string> GetNoTransferStops()
+    private HashSet<string> GetNoTransferStops(Dictionary<string, string> stopMap)
     {
-        var stopMap = Stops.ToDictionary(x => x["stop_id"], x => x["parent_station"] == "" ? x["stop_id"] : x["parent_station"]);
         var tripRouteMap = Trips.ToDictionary(x => x["trip_id"], x => x["route_id"]);
         var stopRoutes = StopTimes
             .Select(x => new { stop_id = stopMap[x["stop_id"]], route_id = tripRouteMap[x["trip_id"]] })
@@ -43,18 +45,24 @@ class Extractor
 
     public void Process(string outputFile)
     {
-        var noTransferStops = GetNoTransferStops();
+        var stopMap = Stops.ToDictionary(x => x["stop_id"], x => x["parent_station"] == "" ? x["stop_id"] : x["parent_station"]);
+
+        var noTransferStops = GetNoTransferStops(stopMap);
 
         var transitions = new List<Transition>();
 
         var trips = StopTimes.GroupBy(x => x["trip_id"]).Select(g => g.OrderBy(x => int.Parse(x["stop_sequence"])).ToList());
         foreach (var trip in trips)
         {
-            var tripTransitions = GetTripTransitions(trip);
+            var tripTransitions = GetTripTransitions(trip, stopMap);
             //RemoveNoTransferTransitions(tripTransitions, noTransferStops);
             RemoveInvalidTimeTransitions(tripTransitions);
-            AddStopNames(tripTransitions);
+            RemoveStatenIslandTransitions(tripTransitions);
+            var transferTransitions = GetTransferTransitions(tripTransitions, stopMap);
+            //AddStopNames(tripTransitions);
+            //AddStopNames(transferTransitions);
             transitions.AddRange(tripTransitions);
+            transitions.AddRange(transferTransitions);
         }
 
         File.WriteAllText(outputFile, JsonSerializer.Serialize(transitions, new JsonSerializerOptions { WriteIndented = true }));
@@ -68,6 +76,7 @@ class Extractor
             var transition = transitions[index];
             if (noTransferStops.Contains(transition.EndStation))
             {
+                //transition.PassedStations.Add(transition.EndStation);
                 transition.EndStation = transitions[index + 1].EndStation;
                 transition.EndTime = transitions[index + 1].EndTime;
                 transitions.RemoveAt(index + 1);
@@ -109,10 +118,16 @@ class Extractor
         {
             transition.StartStation = Stops.Where(x => x["stop_id"] == transition.StartStation).Single()["stop_name"];
             transition.EndStation = Stops.Where(x => x["stop_id"] == transition.EndStation).Single()["stop_name"];
+            //int i = 0;
+            //while(i < transition.PassedStations.Count)
+            //{
+            //    transition.PassedStations[i] = Stops.Where(x => x["stop_id"] == transition.PassedStations[i]).Single()["stop_name"];
+            //    i++;
+            //}
         }
     }
 
-    private List<Transition> GetTripTransitions(List<Dictionary<string, string>> stops)
+    private List<Transition> GetTripTransitions(List<Dictionary<string, string>> stops, Dictionary<string, string> stopMap)
     {
         var transitions = new List<Transition>();
 
@@ -123,10 +138,38 @@ class Extractor
         var calendar = Calendar.Where(x => x["service_id"] == trip["service_id"]).Single();
         var days = Enum.GetValues<DayOfWeek>().Select(x => new { dayName = x.ToString().ToLowerInvariant(), dayOfWeek = (int)x }).Where(o => calendar[o.dayName] == "1").Select(o => o.dayOfWeek).ToList();
 
-        var prevStation = "";
-        var prevTime = "";
+        var prevStation = stopMap[stops[0]["stop_id"]];
+        var prevTime = stops[0]["departure_time"];
         foreach (var stop in stops)
-            ProcessStop(stop, transitions, routeName, days, ref prevStation, ref prevTime);
+            ProcessStop(stop, stopMap, transitions, routeName, days, ref prevStation, ref prevTime);
+
+        return transitions;
+    }
+
+    private List<Transition> GetTransferTransitions(List<Transition> tripTransitions, Dictionary<string, string> stopMap)
+    {
+        var transitions = new List<Transition>();
+
+        foreach(var transition in tripTransitions)
+        {
+            foreach(var transfer in Transfers)
+            {
+                if (transfer["from_stop_id"] == transition.EndStation && transfer["from_stop_id"] != transfer["to_stop_id"])
+                {
+                    var transferTransition = new Transition
+                    {
+                        StartStation = transition.EndStation,
+                        StartTime = transition.EndTime +(new TimeSpan(0, 0, 0, 10)),
+                        EndStation = transfer["to_stop_id"],
+                        EndTime = transition.EndTime +(new TimeSpan(0, 0, 0, 30)),
+                        Route = "Transfer",
+                    };
+                    transitions.Add(transferTransition);
+                }
+
+            }
+
+        }
 
         return transitions;
     }
@@ -137,9 +180,9 @@ class Extractor
         return SundayTime + TimeSpan.FromDays(day) + TimeSpan.FromHours(int.Parse(fields[0])) + TimeSpan.FromMinutes(int.Parse(fields[1]));
     }
 
-    private void ProcessStop(Dictionary<string, string> stop, List<Transition> transitions, string routeName, List<int> days, ref string prevStation, ref string prevTime)
+    private void ProcessStop(Dictionary<string, string> stop, Dictionary<string, string> stopMap, List<Transition> transitions, string routeName, List<int> days, ref string prevStation, ref string prevTime)
     {
-        if (prevStation != "")
+        if (prevStation != stopMap[stop["stop_id"]])
         {
             foreach (var day in days)
             {
@@ -147,7 +190,7 @@ class Extractor
                 {
                     StartStation = prevStation,
                     StartTime = ParseDateTime(day, prevTime),
-                    EndStation = stop["stop_id"],
+                    EndStation = stopMap[stop["stop_id"]],
                     EndTime = ParseDateTime(day, stop["arrival_time"]),
                     Route = routeName,
                 };
@@ -155,7 +198,7 @@ class Extractor
             }
         }
 
-        prevStation = stop["stop_id"];
+        prevStation = stopMap[stop["stop_id"]];
         prevTime = stop["departure_time"];
     }
 }
